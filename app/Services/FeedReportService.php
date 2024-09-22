@@ -46,7 +46,7 @@ class FeedReportService
     ];
 
 
-    public function findReport($startIndex,  $maxResults)
+    public function findReport($startIndex, $maxResults)
     {
         return $this->feedReportRepository->findReport($startIndex, $maxResults);
     }
@@ -66,16 +66,21 @@ class FeedReportService
         $xml = simplexml_load_string($response->body());
         $pubDate = (string)$xml->xpath('//channel/pubdate')[0];
 
-        if($lastPubDate && $lastPubDate == $pubDate){
-          return [
-              'report' => $this->feedReportRepository->findReport($lastStartIndex, $lastMaxResults),
-              'message' => __('messages.wait_message')
-          ];
+        if ($lastPubDate && $lastPubDate == $pubDate) {
+            return [
+                'report' => $this->feedReportRepository->findReport($lastStartIndex, $lastMaxResults),
+                'message' => __('messages.wait_message')
+            ];
+        }
+
+        $movies = $xml->xpath('//channel/item');
+        if ($maxResults != count($movies)) {
+            throw new \Exception(__('messages.api_error'));
         }
         session(['last_pub_date' => $pubDate, 'start_index' => $startIndex, 'max_results' => $maxResults]);
         session()->save();
 
-        $movies = $xml->xpath('//channel/item');
+
         if (count($movies) === 0) {
             return null;
         }
@@ -97,7 +102,7 @@ class FeedReportService
         return [
             'report' => $this->feedReportRepository->saveReport($report),
             'message' => __('messages.report_generated')
-            ];
+        ];
     }
 
     public function getTotalCountryMovies(array $movies)
@@ -215,7 +220,7 @@ class FeedReportService
                                 $keywordFrequencyUk[$word]++;
                             }
                         }
-                    } else if((string)$description['locale'] == "en-US") {
+                    } else if ((string)$description['locale'] == "en-US") {
                         // Разбиваем описание на слова
                         $words = preg_split('/\s+/', (string)$description);
 

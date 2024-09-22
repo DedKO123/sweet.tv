@@ -29,5 +29,5 @@ return [
     'keyword' => 'Keyword',
     'frequency' => 'Frequency',
     'statistic_by_year' => 'Statistics by year of movie production.',
-
+    'api_error' => 'The server cannot provide a report with the parameters you specified right now. Please try again later.',
 ];
