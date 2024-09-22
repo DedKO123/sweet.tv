@@ -21,10 +21,8 @@ class FeedReportController extends Controller
     public function generateReport(Request $request)
     {
         try {
-            // Ищем отчет
             $report = $this->feedReportService->findReport($request->start_index, $request->max_results);
 
-            // Если отчет найден, возвращаем его данные в формате JSON
             if ($report) {
                 return response()->json([
                     'success' => true,
@@ -33,7 +31,6 @@ class FeedReportController extends Controller
                 ]);
             }
 
-            // Если отчета нет, создаем новый отчет
             $reportData = $this->feedReportService->generateReport($request->start_index, $request->max_results);
 
             return response()->json([
