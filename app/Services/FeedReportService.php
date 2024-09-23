@@ -4,10 +4,8 @@ namespace App\Services;
 
 use App\DTO\FeedReportDTO;
 use App\FeedReportRepositoryInterface;
+use App\Models\MovieFeedReport;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Str;
-use function App\Console\Commands\cleanWord;
 
 class FeedReportService
 {
@@ -46,12 +44,12 @@ class FeedReportService
     ];
 
 
-    public function findReport($startIndex, $maxResults)
+    public function findReport(string $startIndex, string $maxResults): ?MovieFeedReport
     {
         return $this->feedReportRepository->findReport($startIndex, $maxResults);
     }
 
-    public function generateReport($startIndex, $maxResults): ?array
+    public function generateReport(string $startIndex, string $maxResults): ?array
     {
         $lastPubDate = session('last_pub_date');
         $lastStartIndex = session('start_index');
@@ -67,15 +65,23 @@ class FeedReportService
         $pubDate = (string)$xml->xpath('//channel/pubdate')[0];
 
         if ($lastPubDate && $lastPubDate == $pubDate) {
+            $report = $this->feedReportRepository->findReport($lastStartIndex, $lastMaxResults);
+            if(!$report){
+                $report = $this->feedReportRepository->getLatestReport();
+            }
+
             return [
-                'report' => $this->feedReportRepository->findReport($lastStartIndex, $lastMaxResults),
+                'report' => $report,
                 'message' => __('messages.wait_message')
             ];
         }
 
         $movies = $xml->xpath('//channel/item');
         if ($maxResults != count($movies)) {
-            throw new \Exception(__('messages.api_error'));
+            return  [
+                'report' => $this->feedReportRepository->getLatestReport(),
+                'message' => __('messages.api_error')
+            ];
         }
         session(['last_pub_date' => $pubDate, 'start_index' => $startIndex, 'max_results' => $maxResults]);
         session()->save();
@@ -105,19 +111,21 @@ class FeedReportService
         ];
     }
 
-    public function getTotalCountryMovies(array $movies)
+    public function getTotalCountryMovies(array $movies): int
     {
         $countries = [];
         foreach ($movies as $movie) {
             if (isset($movie->countryavailability)) {
-                $countries[] = (string)$movie->countryavailability->country;
+                $country = (string)$movie->countryavailability->country;
+                $countries[$country] = true;
             }
         }
 
-        return count(array_unique($countries));
+        return count($countries);
     }
 
-    public function getAverageActors(array $movies)
+
+    public function getAverageActors(array $movies): int
     {
         $totalActors = 0;
         $movieCountWithActors = 0;
@@ -128,31 +136,23 @@ class FeedReportService
                 $movieCountWithActors++;
             }
         }
-        return $movieCountWithActors > 0 ? $totalActors / $movieCountWithActors : 0;
+        return $movieCountWithActors > 0 ? round($totalActors / $movieCountWithActors) : 0;
     }
 
-    public function getViewingOptionsCount(array $movies)
+    public function getViewingOptionsCount(array $movies): array
     {
         $subscriptionMovies = 0;
         $purchaseMovies = 0;
-        foreach ($movies as $movie) {
-            $licenses = $movie->viewingoptions->xpath('viewingoption/license');
-            $hasPurchase = false;
-            $hasSubscription = false;
-            foreach ($licenses as $license) {
-                if ((string)$license == 'SUBSCRIPTION') {
-                    $hasSubscription = true;
-                }
-                if ((string)$license == 'PURCHASE') {
-                    $hasPurchase = true;
-                }
-            }
 
-            if ($hasSubscription) {
-                $subscriptionMovies++;
-            }
-            if ($hasPurchase) {
-                $purchaseMovies++;
+        foreach ($movies as $movie) {
+            if (isset($movie->viewingoptions)) {
+                $licenses = array_map('strval', $movie->viewingoptions->xpath('viewingoption/license'));
+                if (in_array('SUBSCRIPTION', $licenses)) {
+                    $subscriptionMovies++;
+                }
+                if (in_array('PURCHASE', $licenses)) {
+                    $purchaseMovies++;
+                }
             }
         }
 
@@ -162,7 +162,8 @@ class FeedReportService
         ];
     }
 
-    public function getMoviesByGenre(array $movies)
+
+    public function getMoviesByGenre(array $movies): array
     {
         $genres = [];
         foreach ($movies as $movie) {
@@ -181,7 +182,7 @@ class FeedReportService
         return $genres;
     }
 
-    public function getMoviesByCountry(array $movies)
+    public function getMoviesByCountry(array $movies): array
     {
         $moviesByCountry = [];
         foreach ($movies as $movie) {
@@ -204,39 +205,15 @@ class FeedReportService
 
         foreach ($movies as $movie) {
             if (isset($movie->descriptions)) {
-
                 foreach ($movie->descriptions->description as $description) {
-                    // Проверяем, что описание имеет локаль "uk-UK"
-                    if ((string)$description['locale'] == "uk-UK") {
-                        // Разбиваем описание на слова
-                        $words = preg_split('/\s+/', (string)$description);
-
-                        foreach ($words as $word) {
-                            // Проверяем, что слово имеет длину >= 5 символов и не является стоп-словом
-                            if (strlen($word) >= 5 && !in_array($word, $this->stopWordsUk)) {
-                                if (!isset($keywordFrequencyUk[$word])) {
-                                    $keywordFrequencyUk[$word] = 0;
-                                }
-                                $keywordFrequencyUk[$word]++;
-                            }
-                        }
-                    } else if ((string)$description['locale'] == "en-US") {
-                        // Разбиваем описание на слова
-                        $words = preg_split('/\s+/', (string)$description);
-
-                        foreach ($words as $word) {
-                            // Проверяем, что слово имеет длину >= 5 символов и не является стоп-словом
-                            if (strlen($word) >= 5 && !in_array($word, $this->stopWordsEn)) {
-                                if (!isset($keywordFrequencyEn[$word])) {
-                                    $keywordFrequencyEn[$word] = 0;
-                                }
-                                $keywordFrequencyEn[$word]++;
-                            }
-                        }
+                    $locale = (string)$description['locale'];
+                    if ($locale == "uk-UK") {
+                        $this->processDescription($description, $keywordFrequencyUk, $this->stopWordsUk);
+                    } else if ($locale == "en-US") {
+                        $this->processDescription($description, $keywordFrequencyEn, $this->stopWordsEn);
                     }
                 }
             }
-
         }
 
         arsort($keywordFrequencyEn);
@@ -247,7 +224,6 @@ class FeedReportService
             'uk' => array_slice($keywordFrequencyUk, 0, 15, true)
         ];
     }
-
 
     public function getMoviesByYear(array $movies): array
     {
@@ -265,5 +241,19 @@ class FeedReportService
         krsort($moviesByYear);
 
         return $moviesByYear;
+    }
+
+    private function processDescription($description, array &$keywordFrequency, array $stopWords): void
+    {
+        $words = preg_split('/\s+/', (string)$description);
+        foreach ($words as $word) {
+            $word = strtolower($word);
+            if (strlen($word) >= 5 && !in_array($word, $stopWords)) {
+                if (!isset($keywordFrequency[$word])) {
+                    $keywordFrequency[$word] = 0;
+                }
+                $keywordFrequency[$word]++;
+            }
+        }
     }
 }

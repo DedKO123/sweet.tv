@@ -10,4 +10,6 @@ interface FeedReportRepositoryInterface
     public function findReport(int $startIndex, int $maxResults): ?MovieFeedReport;
 
     public function saveReport(FeedReportDTO $report): MovieFeedReport;
+
+    public function getLatestReport(): MovieFeedReport;
 }

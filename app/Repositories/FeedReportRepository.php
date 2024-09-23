@@ -22,4 +22,11 @@ class FeedReportRepository implements FeedReportRepositoryInterface
           $reportDTO->toArray()
         );
     }
+
+    public function getLatestReport(): MovieFeedReport
+    {
+        return MovieFeedReport::query()
+            ->latest()
+            ->first();
+    }
 }
